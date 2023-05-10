@@ -29,10 +29,10 @@ func (u *UserService) HelloRegister(c *gin.Context) {
 		},
 	)
 }
-func (u *UserService) Write(c *gin.Context, responseBody *bytes.Buffer) {
+func (u *UserService) Write(ps map[string]any, c *gin.Context, responseBody *bytes.Buffer) {
 	log.Printf("打印register日志：方法：%s,路由：%s,响应:%s", c.Request.Method, c.Request.URL.Path, responseBody)
 }
-func (u *UserService) WriterLog(c *gin.Context, responseBody *bytes.Buffer) {
+func (u *UserService) WriterLog(ps map[string]any, c *gin.Context, responseBody *bytes.Buffer) {
 	log.Printf("打印日志：方法：%s,路由：%s,响应:%s", c.Request.Method, c.Request.URL.Path, responseBody)
 }
 

@@ -2,7 +2,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"github.com/gin-gonic/gin"
+	"io"
+	"net/http"
+	"strings"
 )
 
 // 自定义一个结构体，实现 gin.ResponseWriter interface
@@ -20,7 +25,7 @@ func (w responseWriter) Write(b []byte) (int, error) {
 }
 
 type Logger interface {
-	Write(c *gin.Context, responseBody *bytes.Buffer)
+	Write(ps map[string]any, c *gin.Context, responseBody *bytes.Buffer)
 }
 
 var OperateLogger *LoggerMiddleware
@@ -68,19 +73,26 @@ func (l *LoggerMiddleware) SetHandler(method, url string, logger Logger) {
 func (l *LoggerMiddleware) RegisterGinHandler(method, url string, logger Logger) {
 	l.SetHandler(method, url, logger)
 }
-func LoggerMiddleWare(writers ...func(c *gin.Context, b *bytes.Buffer)) func(c *gin.Context) {
+func LoggerMiddleWare(writers ...func(pa map[string]any, c *gin.Context, b *bytes.Buffer)) func(c *gin.Context) {
 	return func(c *gin.Context) {
+		//提取参数
+		ps, err := parseParams(c)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusOK, err)
+			return
+		}
 		writer := responseWriter{
 			c.Writer,
 			bytes.NewBuffer([]byte{}),
 		}
 		c.Writer = writer
+
 		//// 执行下一个中间件或路由处理函数
 		c.Next()
 		//记录日志
 		if len(writers) > 0 {
 			for _, w := range writers {
-				w(c, writer.b)
+				w(ps, c, writer.b)
 			}
 			return
 		}
@@ -89,7 +101,39 @@ func LoggerMiddleWare(writers ...func(c *gin.Context, b *bytes.Buffer)) func(c *
 			if handler == nil {
 				return
 			}
-			handler.Write(c, writer.b)
+			handler.Write(ps, c, writer.b)
 		}
 	}
+}
+
+func parseParams(c *gin.Context) (map[string]any, error) {
+	ps := parseUrlRequest(c.Request.URL.RawQuery)
+	if c.Request.Header["Content-Type"] != nil && strings.Index(c.Request.Header["Content-Type"][0], "application/json") >= 0 {
+		s, _ := io.ReadAll(c.Request.Body)
+		if len(s) > 0 {
+			if err := json.Unmarshal(s, &ps); err != nil {
+				return nil, fmt.Errorf("parse paramse body err:%v", err)
+			}
+		}
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(s))
+	}
+	if err := c.Request.ParseForm(); err == nil {
+		c.PostForm("")
+		for k, v := range c.Request.PostForm {
+			ps[k] = v[0]
+		}
+	}
+	return ps, nil
+}
+func parseUrlRequest(query string) map[string]any {
+	res := make(map[string]interface{})
+	ps := strings.Split(query, "&")
+	for _, p := range ps {
+		vs := strings.Split(p, "=")
+		if len(vs) != 2 {
+			continue
+		}
+		res[vs[0]] = vs[1]
+	}
+	return res
 }
